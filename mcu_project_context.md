@@ -2,7 +2,7 @@
 
 > 本文档是本项目的长期上下文与 Agent 交接入口。  
 > 新 Agent 开始教学或修改工程前，应先完整阅读本文，再检查当前工程与硬件状态。  
-> 最后更新：2026-09-05
+> 最后更新：2026-09-06
 
 ## 1. 核心目标
 
@@ -100,34 +100,47 @@ STM32G431（模拟 VCU / 电机控制器）
 
 注意：SN65HVD230 是物理层收发器。STM32 内部的 FDCAN 控制器不能直接连接 CAN_H/CAN_L。经典 CAN 阶段可使用现有模块；学习 CAN FD 时需要兼容 CAN FD 的收发器。
 
-## 4. 当前开发环境（已经打通）
+## 4. 跨平台开发约定与已验证环境
 
-### 主机与编辑器
+### 工程的跨平台约定
 
-- Windows + WSL2
-- WSL 发行版：Ubuntu 26.04
-- 编辑器：VS Code Remote WSL
-- 工作区：`/home/shamming/stm32`
+- 仓库必须能在 macOS、Linux、Windows 和 WSL2 之间迁移。
+- 工程内只保存源码、`.ioc`、相对路径 CMake 配置及可复现的 Bundle 版本声明。
+- 不得在受版本控制的文件中写死用户名、仓库绝对路径、工具安装绝对路径、USB BUSID 或串口设备名。
+- `build/`、编辑器缓存和机器专属 `.vscode/` 配置不纳入版本控制。
+- 换机器后，在具体工程目录执行 STM32 VS Code 扩展的 Setup，由扩展为当前操作系统安装对应工具。
 
-当前不需要迁移到 Mac。Mac 可作为备用开发机，但主环境先保持稳定，避免重复配置。
+GitHub 仓库：
 
-### STM32 工具
 
+```text
+https://github.com/ShammingWang/stm32g4-control-lab
+```
+
+### 已验证的 WSL2 环境记录
+
+以下内容仅记录第一台开发机的已验证状态，用于故障排查，不是项目运行前提：
+
+- Windows + WSL2，Ubuntu 26.04
+- VS Code Remote WSL
 - STM32CubeMX 6.18.1（Linux x86_64）
-- 安装路径：`/home/shamming/STM32CubeMX/STM32CubeMX`
+- CMake + Ninja + GNU Arm Embedded GCC
+- STM32CubeProgrammer + ST-Link GDB Server
+- STLINK-V3 已成功编译、烧录和 GDB 调试
+
+该机器的 CubeMX 曾安装在用户主目录，但绝对路径只保存在本机 VS Code 设置中，不应提交到仓库。
+
+### STM32 工具的通用关系
+
 - VS Code 扩展：STM32CubeIDE for Visual Studio Code（STMicroelectronics）
 - 工具链：CMake + Ninja + GNU Arm Embedded GCC
 - 下载/调试：STM32CubeProgrammer + ST-Link GDB Server
 
-VS Code 插件使用自己的 Bundle 目录，工具不一定出现在普通 shell 的 `PATH` 中。这不代表未安装。例如当前已使用：
+VS Code 插件使用平台专属 Bundle 管理工具；工具不一定出现在普通 shell 的 `PATH` 中，这不代表未安装。不要依赖某台机器的 Bundle 绝对目录。
 
-```text
-~/.local/share/stm32cube/bundles/
-```
+### WSL2 专属 USB 说明
 
-### WSL USB / ST-Link
-
-板载 ST-Link 通过 Windows `usbipd-win` 透传给 WSL：
+只在使用 WSL2 时，板载 ST-Link 需要通过 Windows `usbipd-win` 透传：
 
 ```powershell
 usbipd bind --busid <BUSID>
@@ -136,16 +149,16 @@ usbipd attach --wsl --busid <BUSID>
 
 USB 的 BUSID 在拔插或更换接口后可能变化，必须以 `usbipd list` 当前输出为准，不要永久假设是某个固定值。
 
-WSL 已安装：
+首台 WSL 开发机已安装：
 
 - `libusb-1.0-0`
 - ST-Link udev 规则：`/etc/udev/rules.d/49-stlinkv*.rules`
 
-当前已经成功识别：
+该机器已经成功识别：
 
 - STLINK-V3
 - NUCLEO-G431RB
-- `/dev/ttyACM0` 板载虚拟串口
+- 板载虚拟串口（具体设备名可能变化）
 
 如果重启、拔插后 VS Code 报 `ST-Link not connected`，按以下顺序排查：
 
@@ -155,12 +168,14 @@ WSL 已安装：
 4. 用 STM32CubeProgrammer 的 `--list` 做只读枚举。
 5. 不要在 Windows 工具和 WSL 工具之间同时占用同一个 ST-Link。
 
+macOS 原生开发不需要 `usbipd` 或 Linux udev 规则。克隆仓库后安装 macOS 版 VS Code 扩展与 CubeMX，在 `blink_led` 目录执行 Setup，再连接 ST-Link 构建和调试。
+
 ## 5. 当前工程与已完成进度
 
-当前工程：
+当前工程（相对仓库根目录）：
 
 ```text
-/home/shamming/stm32/blink_led
+blink_led/
 ```
 
 关键内容：
@@ -437,4 +452,3 @@ os/        tasks、queues、timing
 - `紧接着要做的事`
 
 只记录已经验证的事实。不要把计划写成已完成，也不要记录密码、Token、邮箱、私有账号信息或不必要的设备序列号。
-
