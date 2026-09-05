@@ -19,7 +19,7 @@
 - GPIO 输入：板载按钮 PC13
 - 当前实验：EXTI 外部中断控制板载 LED PA5
 
-详细学习背景、路线、当前状态和 Agent 交接说明见 [mcu_project_context.md](mcu_project_context.md)。
+详细学习背景、路线、当前状态和 Agent 交接说明见 [docs/mcu_project_context.md](docs/mcu_project_context.md)。
 
 ## 工程
 

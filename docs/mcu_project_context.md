@@ -294,7 +294,8 @@ HAL_Delay(900);
 
 ```text
 stm32/
-├── mcu_project_context.md
+├── docs/
+│   └── mcu_project_context.md
 ├── lessons/
 │   ├── 01_gpio_basics/
 │   ├── 02_interrupt_timer/
