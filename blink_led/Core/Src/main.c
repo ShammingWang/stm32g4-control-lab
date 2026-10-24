@@ -73,6 +73,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  static const uint8_t message[] = "Hello STM32\r\n";
+  uint32_t lastSendTick = 0;
 
   /* USER CODE END 1 */
 
@@ -136,6 +138,18 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    /* Send from the main loop; timer interrupts keep the LED breathing. */
+    uint32_t now = HAL_GetTick();
+    if ((uint32_t)(now - lastSendTick) >= 1000U)
+    {
+      lastSendTick = now;
+      /* Exclude the string's terminating NUL byte from transmission. */
+      if (HAL_UART_Transmit(&hcom_uart[COM1], message,
+                            sizeof(message) - 1U, 100U) != HAL_OK)
+      {
+        Error_Handler();
+      }
+    }
   }
   /* USER CODE END 3 */
 }
