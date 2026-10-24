@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +42,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim6;
 
 COM_InitTypeDef BspCOMInit;
 
@@ -53,6 +54,7 @@ COM_InitTypeDef BspCOMInit;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM6_Init(void);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
 
@@ -93,10 +95,18 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM2_Init();
+  MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
 
   /* PA5 is driven by TIM2_CH1; do not reinitialize it with BSP_LED_Init. */
   if (HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* Initialization generates an update flag; clear it before enabling IRQs. */
+  __HAL_TIM_CLEAR_FLAG(&htim6, TIM_FLAG_UPDATE);
+  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK)
   {
     Error_Handler();
   }
@@ -121,18 +131,8 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* ARR + 1 = 1000: CCR1 from 0 to 1000 gives 0% to 100%. */
-    for (uint32_t pulse = 0; pulse <= 1000; pulse += 10)
-    {
-      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse);
-      HAL_Delay(10);
-    }
-
-    for (int32_t pulse = 1000; pulse >= 0; pulse -= 10)
-    {
-      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)pulse);
-      HAL_Delay(10);
-    }
+    /* PWM runs in TIM2; TIM6 interrupts adjust the brightness. */
+    __WFI();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -217,6 +217,23 @@ static void MX_TIM2_Init(void)
 }
 
 /**
+  * @brief TIM6: update interrupt every 10 ms (170 MHz timer clock).
+  */
+static void MX_TIM6_Init(void)
+{
+  htim6.Instance = TIM6;
+  /* 170 MHz / 17000 / 100 = 100 Hz, i.e. one update every 10 ms. */
+  htim6.Init.Prescaler = 16999;
+  htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim6.Init.Period = 99;
+  htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -239,7 +256,40 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static volatile bool isPaused = false;
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* These variables belong only to this ISR and persist between interrupts. */
+  static int32_t pulse = 0;
+  static int32_t step = 10;
 
+  if (htim->Instance == TIM6)
+  {
+    if (isPaused) return;
+    /* 100 steps up + 100 steps down: a complete breath takes 2 seconds. */
+    pulse += step;
+    if (pulse >= 1000)
+    {
+      pulse = 1000;
+      step = -10;
+    }
+    else if (pulse <= 0)
+    {
+      pulse = 0;
+      step = 10;
+    }
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)pulse);
+  }
+}
+
+void BSP_PB_Callback(Button_TypeDef Button)
+{
+  if (Button == BUTTON_USER)
+  {
+    /* TODO: Add your button handling logic here (interrupt context). */
+    isPaused = !isPaused;
+  }
+}
 
 /* USER CODE END 4 */
 

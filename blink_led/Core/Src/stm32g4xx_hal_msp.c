@@ -81,6 +81,25 @@ void HAL_MspInit(void)
 }
 
 
+void HAL_TIM_Base_MspInit(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM6)
+  {
+    __HAL_RCC_TIM6_CLK_ENABLE();
+    HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
+  }
+}
+
+void HAL_TIM_Base_MspDeInit(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM6)
+  {
+    HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
+    __HAL_RCC_TIM6_CLK_DISABLE();
+  }
+}
+
 void HAL_TIM_PWM_MspInit(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM2)
