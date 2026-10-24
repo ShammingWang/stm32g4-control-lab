@@ -41,6 +41,8 @@
 
 /* Private variables ---------------------------------------------------------*/
 
+TIM_HandleTypeDef htim2;
+
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
@@ -50,6 +52,8 @@ COM_InitTypeDef BspCOMInit;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_TIM2_Init(void);
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -88,12 +92,16 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
-  /* USER CODE END 2 */
+  /* PA5 is driven by TIM2_CH1; do not reinitialize it with BSP_LED_Init. */
+  if (HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
-  /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
+  /* USER CODE END 2 */
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
@@ -113,7 +121,18 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    __WFI();
+    /* ARR + 1 = 1000: CCR1 from 0 to 1000 gives 0% to 100%. */
+    for (uint32_t pulse = 0; pulse <= 1000; pulse += 10)
+    {
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse);
+      HAL_Delay(10);
+    }
+
+    for (int32_t pulse = 1000; pulse >= 0; pulse -= 10)
+    {
+      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, (uint32_t)pulse);
+      HAL_Delay(10);
+    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -168,6 +187,36 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief TIM2 CH1: 1 kHz PWM on PA5 (170 MHz timer clock).
+  */
+static void MX_TIM2_Init(void)
+{
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  htim2.Instance = TIM2;
+  htim2.Init.Prescaler = 169;
+  htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim2.Init.Period = 999;
+  htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* PWM1, active high: CNT < CCR1 means LED on. */
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_TIM_MspPostInit(&htim2);
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -191,13 +240,6 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-void BSP_PB_Callback(Button_TypeDef Button)
-{
-  if (Button == BUTTON_USER)
-  {
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-  }
-}
 
 /* USER CODE END 4 */
 
