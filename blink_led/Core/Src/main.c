@@ -47,6 +47,8 @@ TIM_HandleTypeDef htim6;
 COM_InitTypeDef BspCOMInit;
 
 /* USER CODE BEGIN PV */
+/* Interrupt reception needs a buffer that outlives the initialization call. */
+static uint8_t uartRxByte;
 
 /* USER CODE END PV */
 
@@ -131,6 +133,14 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  /* BSP_COM_Init above prepares LPUART1 and its TX/RX pins. */
+  HAL_NVIC_SetPriority(LPUART1_IRQn, 15, 0);
+  HAL_NVIC_EnableIRQ(LPUART1_IRQn);
+  if (HAL_UART_Receive_IT(&hcom_uart[COM1], &uartRxByte, 1U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
   while (1)
   {
     /* PWM runs in TIM2; TIM6 interrupts adjust the brightness. */
@@ -302,6 +312,46 @@ void BSP_PB_Callback(Button_TypeDef Button)
   {
     /* TODO: Add your button handling logic here (interrupt context). */
     isPaused = !isPaused;
+  }
+}
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  if (huart == &hcom_uart[COM1])
+  {
+    uint8_t command = uartRxByte;
+
+    /* A one-byte reception completes once; arm the next one explicitly. */
+    if (HAL_UART_Receive_IT(huart, &uartRxByte, 1U) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    switch (command)
+    {
+      case 'p':
+        isPaused = true;
+        break;
+      case 'r':
+        isPaused = false;
+        break;
+      default:
+        /* Ignore other characters, including terminal line endings. */
+        break;
+    }
+  }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+  /* Overrun can end interrupt reception; rearm it after HAL clears the error. */
+  if ((huart == &hcom_uart[COM1]) &&
+      (huart->RxState == HAL_UART_STATE_READY))
+  {
+    if (HAL_UART_Receive_IT(huart, &uartRxByte, 1U) != HAL_OK)
+    {
+      Error_Handler();
+    }
   }
 }
 
