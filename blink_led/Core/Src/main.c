@@ -31,6 +31,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define UART_COMMAND_QUEUE_SIZE 32U
 
 /* USER CODE END PD */
 
@@ -49,6 +50,11 @@ COM_InitTypeDef BspCOMInit;
 /* USER CODE BEGIN PV */
 /* Interrupt reception needs a buffer that outlives the initialization call. */
 static uint8_t uartRxByte;
+static volatile bool isPaused = false;
+/* One producer (UART IRQ), one consumer (main loop); capacity is 31 commands. */
+static volatile uint8_t uartCommands[UART_COMMAND_QUEUE_SIZE];
+static volatile uint32_t uartCommandHead;
+static volatile uint32_t uartCommandTail;
 
 /* USER CODE END PV */
 
@@ -59,6 +65,7 @@ static void MX_TIM2_Init(void);
 static void MX_TIM6_Init(void);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 /* USER CODE BEGIN PFP */
+static void UART_ProcessCommand(void);
 
 /* USER CODE END PFP */
 
@@ -75,8 +82,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  static const uint8_t message[] = "Hello STM32\r\n";
-  uint32_t lastSendTick = 0;
+  // static const uint8_t message[] = "Hello STM32\r\n";
+  // uint32_t lastSendTick = 0;
 
   /* USER CODE END 1 */
 
@@ -148,18 +155,20 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    UART_ProcessCommand();
+
     /* Send from the main loop; timer interrupts keep the LED breathing. */
-    uint32_t now = HAL_GetTick();
-    if ((uint32_t)(now - lastSendTick) >= 1000U)
-    {
-      lastSendTick = now;
-      /* Exclude the string's terminating NUL byte from transmission. */
-      if (HAL_UART_Transmit(&hcom_uart[COM1], message,
-                            sizeof(message) - 1U, 100U) != HAL_OK)
-      {
-        Error_Handler();
-      }
-    }
+    // uint32_t now = HAL_GetTick();
+    // if ((uint32_t)(now - lastSendTick) >= 1000U)
+    // {
+    //   lastSendTick = now;
+    //   /* Exclude the string's terminating NUL byte from transmission. */
+    //   if (HAL_UART_Transmit(&hcom_uart[COM1], message,
+    //                         sizeof(message) - 1U, 100U) != HAL_OK)
+    //   {
+    //     Error_Handler();
+    //   }
+    // }
   }
   /* USER CODE END 3 */
 }
@@ -280,7 +289,60 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static volatile bool isPaused = false;
+/* Called only from main: never wait for UART transmission inside an IRQ. */
+static void UART_ProcessCommand(void)
+{
+  char reply[64];
+  uint8_t command;
+  bool paused;
+  uint32_t compare;
+  uint32_t irqMask = __get_PRIMASK();
+
+  /* Take one command and a consistent LED snapshot without an IRQ intervening. */
+  __disable_irq();
+  if (uartCommandTail == uartCommandHead)
+  {
+    __set_PRIMASK(irqMask);
+    return;
+  }
+  command = uartCommands[uartCommandTail];
+  uartCommandTail = (uartCommandTail + 1U) % UART_COMMAND_QUEUE_SIZE;
+  if (command == 'p')
+  {
+    isPaused = true;
+  }
+  else if (command == 'r')
+  {
+    isPaused = false;
+  }
+  paused = isPaused;
+  compare = __HAL_TIM_GET_COMPARE(&htim2, TIM_CHANNEL_1);
+  __set_PRIMASK(irqMask);
+
+  int length;
+  if (command == 's')
+  {
+    length = snprintf(reply, sizeof(reply), "paused=%u, CCR1=%lu\r\n",
+                      paused ? 1U : 0U, (unsigned long)compare);
+  }
+  else
+  {
+    length = snprintf(reply, sizeof(reply), "%s\r\n",
+                      paused ? "Paused" : "Running");
+  }
+
+  if ((length < 0) || ((size_t)length >= sizeof(reply)))
+  {
+    Error_Handler();
+    return;
+  }
+  if (HAL_UART_Transmit(&hcom_uart[COM1], (const uint8_t *)reply,
+                        (uint16_t)length, 100U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   /* These variables belong only to this ISR and persist between interrupts. */
@@ -327,18 +389,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
       Error_Handler();
     }
 
-    switch (command)
+    if ((command == 'p') || (command == 'r') || (command == 's'))
     {
-      case 'p':
-        isPaused = true;
-        break;
-      case 'r':
-        isPaused = false;
-        break;
-      default:
-        /* Ignore other characters, including terminal line endings. */
-        break;
+      uint32_t next = (uartCommandHead + 1U) % UART_COMMAND_QUEUE_SIZE;
+      if (next != uartCommandTail)
+      {
+        uartCommands[uartCommandHead] = command;
+        uartCommandHead = next;
+      }
+      /* If full, discard the new command; normal interactive input fits. */
     }
+    /* Ignore other characters, including terminal line endings. */
   }
 }
 
