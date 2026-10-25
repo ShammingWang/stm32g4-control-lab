@@ -17,13 +17,15 @@
 - 完成编译、烧录与 GDB 调试链路
 - GPIO 输出：BSP、HAL、ODR、BSRR
 - GPIO 输入：板载按钮 PC13
-- 当前实验：EXTI 外部中断控制板载 LED PA5
+- TIM2 PWM 呼吸灯、TIM6 定时更新亮度、按键暂停/继续
+- 串口每秒发送问候，已在 WSL 终端收到
+- 当前实验：串口中断接收 `p` / `r` 控制暂停/继续（已编译，接收效果待确认）
 
 详细学习背景、路线、当前状态和 Agent 交接说明见 [docs/mcu_project_context.md](docs/mcu_project_context.md)。
 
 ## 工程
 
-- `blink_led/`：GPIO 输出、输入与外部中断基础实验
+- `blink_led/`：GPIO、中断、定时器、PWM 与串口练习
 
 ## 在新电脑上开始
 
@@ -51,3 +53,12 @@
 ### WSL2 提示
 
 WSL2 需要额外使用 `usbipd-win` 把 ST-Link 从 Windows 透传到 WSL，并安装 Linux 的 `libusb` 与 udev 规则。这只是 WSL 主机配置，不是工程依赖。
+
+
+## 两台电脑之间继续学习
+
+学习前先确认 `git status` 干净，再执行 `git pull --ff-only`。
+每个小练习完成后更新学习记录、提交相关改动，换电脑前执行 `git push origin main`。
+另一台电脑拉取后在本机独立构建，不复制 `build/`。
+
+当前状态、待验证项目、练习提交和详细同步约定见 [学习记录第 12 节](docs/mcu_project_context.md#12-wsl-与-macos-接续学习)。

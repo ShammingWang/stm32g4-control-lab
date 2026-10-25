@@ -2,7 +2,7 @@
 
 > 本文档是本项目的长期上下文与 Agent 交接入口。  
 > 新 Agent 开始教学或修改工程前，应先完整阅读本文，再检查当前工程与硬件状态。  
-> 最后更新：2026-09-06
+> 最后更新：2026-10-25
 
 ## 1. 核心目标
 
@@ -189,44 +189,50 @@ blink_led/
 - 调试接口：SWD（PA13/PA14）
 - 固件包：STM32CubeG4 v1.6.3
 
-已经完成：
+已经完成并有板上观察：
 
-- CubeMX 以 NUCLEO-G431RB Board Selector 创建工程
-- 生成 CMake 工程
-- VS Code 插件完成 Setup
-- GCC 编译和链接成功
-- ST-Link 识别、烧录、GDB 调试成功
-- 理解调试器默认停在 `main()` 属于正常的 stop-at-entry
-- 使用 `BSP_LED_Toggle(LED_GREEN)` 点灯
-- 使用 `HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5)` 点灯
-- 当前进一步改为 `HAL_GPIO_WritePin()`，实现短亮/长灭实验
-- 已沿 HAL 调用看到 `ODR` 和 `BSRR` 寄存器操作
+- 编译、烧录、GDB 调试链路跑通。
+- GPIO 输出、板载按键 EXTI 中断。
+- TIM2_CH1 在 PA5 输出 1 kHz PWM，用户确认呼吸灯正常。
+- TIM6 每 10 ms 中断一次，调整 TIM2 CCR1；主循环不再用延时控制呼吸。
+- 按键切换暂停/继续，用户确认运行正常；暂停保留当前亮度和呼吸进度。
+- LPUART1 通过板载 ST-Link 虚拟串口，每秒发送 `Hello STM32`；用户在 WSL miniterm 中确认收到。
 
-当前循环大致为：
+已实现、编译通过，尚需明确确认接收控制的实物结果：
 
-```c
-HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-HAL_Delay(100);
-HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-HAL_Delay(900);
+- UART 单字节中断接收：`p` 暂停、`r` 继续，忽略其他字符。
+- 接收回调重新启动下一次接收，UART 错误终止接收时尝试恢复。
+
+当前代码的分工：
+
+```text
+TIM2：PSC=169，ARR=999，持续输出 1 kHz PWM。
+TIM6：PSC=16999，ARR=99，每 10 ms 调整 CCR1，约 2 秒一次呼吸。
+按键：修改 isPaused，暂不处理消抖（用户明确选择）。
+UART 接收：p/r 修改 isPaused。
+主循环：等待中断，并根据 HAL_GetTick 每秒发送问候。
 ```
 
-用户已经理解的初步概念：
+用户已讨论并理解的概念：
 
-- `GPIOA` 表示 GPIO A 端口，`GPIO_PIN_5` 表示该端口第 5 个引脚，即 PA5
-- BSP 面向具体开发板，HAL 面向 STM32 外设，寄存器直接对应硬件
-- `ODR` 保存 GPIO 输出状态
-- `BSRR` 低 16 位用于置位，高 16 位用于复位（此处复位指输出低电平）
-- `BSRR` 是写命令型寄存器，可用一次写操作避免 ODR 的读—改—写丢失更新
-- BSRR 的原子写有利于中断/RTOS 并发，但不能解决多个执行上下文争用同一引脚的业务逻辑竞争
+- PSC、CNT、ARR 与计数频率、更新频率的关系。
+- CCR1 与 CNT 的比较如何决定 PWM 占空比，PA5 的 AF1 复用。
+- 通道是硬件捕获/比较单元；不同定时器通道数量不同。
+- TIM6 Base 与 TIM2 PWM 初始化入口、MSP 的时钟和 NVIC 准备。
+- 向量表、弱定义、中断入口、HAL IRQ 处理与用户回调的调用链。
+- C11 下使用 `<stdbool.h>`；跨中断共享暂停状态使用 volatile。
+- GDB、ST-Link GDB Server、ST-Link 和 SWD 的职责；这些主题已讲解，仍可结合实践复习。
 
-尚未系统掌握：
+可对照的练习提交：
 
-- GPIO 初始化为什么必须先开 RCC 时钟
-- GPIO `MODER/OTYPER/OSPEEDR/PUPDR` 的含义
-- BSP/HAL/CMSIS 的完整边界
-- 启动文件、链接脚本、向量表
-- 中断、Timer、UART、ADC、PWM、DMA、RTOS、CAN
+| 提交 | 内容 |
+|---|---|
+| `c4af3c5` | TIM2 PWM 呼吸灯 |
+| `904eb7f` | TIM6 调整亮度和按键暂停 |
+| `7af88ac` | 每秒发送串口问候 |
+| `c66c99c` | 串口 p/r 接收控制 |
+
+尚未系统学习：UART 数据帧和接收错误、DMA、ADC、输入捕获、RTOS、CAN、电机控制。
 
 ## 6. 教学方法与 Agent 行为约束
 
@@ -431,16 +437,15 @@ os/        tasks、queues、timing
 
 ## 10. 紧接着要做的事
 
-当前下一课应继续使用 `blink_led` 工程，顺序建议为：
+继续使用 `blink_led`，先完成当前串口接收实验：
 
-1. 验证 `HAL_GPIO_WritePin()` 的 SET/RESET 与 LED 电平关系。
-2. 用调试器观察 GPIOA 的 `MODER` 和 `ODR` bit 5。
-3. 进入 `BSP_LED_Init()` / `HAL_GPIO_Init()`，理解 PA5 为什么必须先被配置为输出。
-4. 解释并验证 GPIOA 的 RCC 时钟使能。
-5. 完成一个不同节奏的 LED 小练习。
-6. 再进入板载按钮的轮询输入。
+1. 烧录并运行，终端输入 `p` 暂停、`r` 继续，不要求回车。
+2. 确认接收控制正常，同时每秒发送问候仍然工作。
+3. 沿 `LPUART1_IRQHandler → HAL_UART_IRQHandler → HAL_UART_RxCpltCallback` 复习调用链。
+4. 理解为何每次收完一个字节后要再次调用 `HAL_UART_Receive_IT`。
+5. 之后再逐步增加状态回传、呼吸速度指令；不要一次引入 DMA 或复杂协议。
 
-新 Agent 不应跳过当前 GPIO 初始化主题，直接带用户进入 RTOS、CAN 或 FOC。
+按键消抖暂时搁置，除非用户重新提出。
 
 ## 11. 每次会话结束时的维护规则
 
@@ -453,3 +458,34 @@ os/        tasks、queues、timing
 - `紧接着要做的事`
 
 只记录已经验证的事实。不要把计划写成已完成，也不要记录密码、Token、邮箱、私有账号信息或不必要的设备序列号。
+
+
+## 12. WSL 与 macOS 接续学习
+
+- 周末使用 WSL + VS Code，工作日使用另一台 macOS；macOS 上的编译和实物调试尚未在本次会话验证。
+- GitHub 仓库作为源码和学习记录的同步入口。不要用云盘同步整个工作目录或复制 build 缓存。
+- 本文记录当前状态、实物验证、待做事项；Git 提交记录每个练习的实际代码差异。
+- 用户已授权：每完成并验证一个小练习，提交一次相关代码。提交说明区分编译验证与板上验证。推送 GitHub 按用户的明确指示执行。
+- 同一时间在一台电脑上修改。换电脑前更新本文、提交并推送；另一台电脑开始前先确认工作区干净，再 `git pull --ff-only`。
+- 如有尚未完成的修改，先明确记录并保存为 WIP 提交；不要把它写成已验证完成，也不要直接覆盖另一台机器上的改动。
+
+常用操作（在仓库中执行）：
+
+```bash
+# 开始学习前：确认本地无待处理修改，再同步
+git status
+git pull --ff-only
+
+# 一个练习结束：查看差异，只提交本次相关文件
+git diff
+git add <本次练习相关文件>
+git commit -m "描述本次练习"
+
+# 离开这台电脑前：把已提交内容同步到 GitHub
+git push origin main
+```
+
+新机器克隆仓库后，打开 `blink_led`，按 README 执行 STM32 扩展 Setup，使用对应平台工具独立构建。
+WSL 每次检查 USB 是否已 attach；macOS 原生连接不使用 usbipd。
+串口用 `python3 -m serial.tools.list_ports -v` 枚举，实际设备名可能不同；miniterm 参数保持 115200、8N1、无流控。
+不提交本机绝对路径、串口设备名、USB BUSID、build、工具 Bundle 或编辑器缓存。
